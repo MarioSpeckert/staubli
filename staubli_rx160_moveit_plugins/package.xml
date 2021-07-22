@@ -26,7 +26,9 @@
   <url type="bugtracker">https://github.com/ros-industrial/staubli/issues</url>
   <url type="repository">https://github.com/ros-industrial/staubli</url>
 
-  <buildtool_depend>catkin</buildtool_depend>
+  <!-- <buildtool_depend>catkin</buildtool_depend> -->
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
   <depend>liblapack-dev</depend>
   <depend>moveit_core</depend>
   <depend>pluginlib</depend>
@@ -36,5 +38,6 @@
 
   <export>
     <moveit_core plugin="${prefix}/rx160_kinematics/staubli_rx160_manipulator_moveit_ikfast_plugin_description.xml"/>
+    <buildtool>ament_cmake</buildtool>
   </export>
 </package>

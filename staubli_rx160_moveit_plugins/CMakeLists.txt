@@ -1,29 +1,23 @@
-cmake_minimum_required(VERSION 2.8.3)
+cmake_minimum_required(VERSION 3.5)
 project(staubli_rx160_moveit_plugins)
 
-find_package(catkin REQUIRED COMPONENTS
-  moveit_core
-  pluginlib
-  roscpp
-  tf_conversions
-)
+find_package(moveit_core REQUIRED)
+find_package(pluginlib REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(tf_conversions REQUIRED)
 
 # enable C++11 if needed for MoveIt on Kinetic
 if ("${moveit_core_VERSION}" VERSION_GREATER "0.9.0")
   add_definitions(-std=c++11)
 endif()
 
-include_directories(${catkin_INCLUDE_DIRS})
+# include_directories(${catkin_INCLUDE_DIRS})
 
 find_package(LAPACK REQUIRED)
 
-catkin_package(
-  LIBRARIES
-  CATKIN_DEPENDS
-    moveit_core
-    pluginlib
-    roscpp
-    tf_conversions
-)
+ament_export_libraries(moveit_core REQUIRED)
+ament_export_libraries(pluginlib REQUIRED)
+ament_export_libraries(rclcpp REQUIRED)
+ament_export_libraries(tf_conversions REQUIRED)
 
 add_subdirectory(rx160_kinematics)
