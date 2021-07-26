@@ -45,10 +45,10 @@
  *
  */
 
-#include <ros/ros.h>
-#include <moveit/kinematics_base/kinematics_base.h>
-#include <urdf/model.h>
-#include <tf_conversions/tf_kdl.h>
+#include "rclcpp/rclcpp.hpp"
+#include "moveit/kinematics_base/kinematics_base.h"
+#include "urdf/model.h"
+#include "tf2_kdl/tf2_kdl.h"
 
 // Need a floating point tolerance when checking joint limits, in case the joint starts at limit
 const double LIMIT_TOLERANCE = .0000001;
@@ -611,7 +611,7 @@ bool IKFastKinematicsPlugin::getPositionFK(const std::vector<std::string> &link_
     p_out.M.data[i] = eerot[i];
 
   poses.resize(1);
-  tf::poseKDLToMsg(p_out,poses[0]);
+  p_out = tf2::toMsg(poses[0]);
 
   return valid;
 }
@@ -747,7 +747,7 @@ bool IKFastKinematicsPlugin::searchPositionIK(const geometry_msgs::Pose &ik_pose
   // Initialize
 
   KDL::Frame frame;
-  tf::poseMsgToKDL(ik_pose,frame);
+  tf2::fromMsg(ik_pose,frame);
 
   std::vector<double> vfree(free_params_.size());
 
@@ -870,7 +870,7 @@ bool IKFastKinematicsPlugin::getPositionIK(const geometry_msgs::Pose &ik_pose,
   }
 
   KDL::Frame frame;
-  tf::poseMsgToKDL(ik_pose,frame);
+  tf2::fromMsg(ik_pose,frame);
 
   IkSolutionList<IkReal> solutions;
   int numsol = solve(frame,vfree,solutions);

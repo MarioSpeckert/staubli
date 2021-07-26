@@ -32,8 +32,8 @@
   <depend>liblapack-dev</depend>
   <depend>moveit_core</depend>
   <depend>pluginlib</depend>
-  <depend>roscpp</depend>
-  <depend>tf_conversions</depend>
+  <depend>rclcpp</depend>
+  <depend>tf2_kdl</depend>
 
 
   <export>
