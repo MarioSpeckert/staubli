@@ -44,72 +44,74 @@
  * your own ROS node.
  *
  */
-
+#include <vector>
+#include <istream>
 #include "rclcpp/rclcpp.hpp"
 #include "moveit/kinematics_base/kinematics_base.h"
 #include "urdf/model.h"
 #include "tf2_kdl/tf2_kdl.h"
+#include "geometry_msgs/msg/pose.hpp"
 
+#include <complex>
 // Need a floating point tolerance when checking joint limits, in case the joint starts at limit
 const double LIMIT_TOLERANCE = .0000001;
 
 namespace ikfast_kinematics_plugin
 {
+ #define IKFAST_NO_MAIN // Don't include main() from IKFast
 
-#define IKFAST_NO_MAIN // Don't include main() from IKFast
+ /// \brief The types of inverse kinematics parameterizations supported.
+ ///
+ /// The minimum degree of freedoms required is set in the upper 4 bits of each type.
+ /// The number of values used to represent the parameterization ( >= dof ) is the next 4 bits.
+ /// The lower bits contain a unique id of the type.
+ enum IkParameterizationType {
+     IKP_None=0,
+     IKP_Transform6D=0x67000001,     ///< end effector reaches desired 6D transformation
+     IKP_Rotation3D=0x34000002,     ///< end effector reaches desired 3D rotation
+     IKP_Translation3D=0x33000003,     ///< end effector origin reaches desired 3D translation
+     IKP_Direction3D=0x23000004,     ///< direction on end effector coordinate system reaches desired direction
+     IKP_Ray4D=0x46000005,     ///< ray on end effector coordinate system reaches desired global ray
+     IKP_Lookat3D=0x23000006,     ///< direction on end effector coordinate system points to desired 3D position
+     IKP_TranslationDirection5D=0x56000007,     ///< end effector origin and direction reaches desired 3D translation and direction. Can be thought of as Ray IK where the origin of the ray must coincide.
+     IKP_TranslationXY2D=0x22000008,     ///< 2D translation along XY plane
+     IKP_TranslationXYOrientation3D=0x33000009,     ///< 2D translation along XY plane and 1D rotation around Z axis. The offset of the rotation is measured starting at +X, so at +X is it 0, at +Y it is pi/2.
+     IKP_TranslationLocalGlobal6D=0x3600000a,     ///< local point on end effector origin reaches desired 3D global point
 
-/// \brief The types of inverse kinematics parameterizations supported.
-///
-/// The minimum degree of freedoms required is set in the upper 4 bits of each type.
-/// The number of values used to represent the parameterization ( >= dof ) is the next 4 bits.
-/// The lower bits contain a unique id of the type.
-enum IkParameterizationType {
-    IKP_None=0,
-    IKP_Transform6D=0x67000001,     ///< end effector reaches desired 6D transformation
-    IKP_Rotation3D=0x34000002,     ///< end effector reaches desired 3D rotation
-    IKP_Translation3D=0x33000003,     ///< end effector origin reaches desired 3D translation
-    IKP_Direction3D=0x23000004,     ///< direction on end effector coordinate system reaches desired direction
-    IKP_Ray4D=0x46000005,     ///< ray on end effector coordinate system reaches desired global ray
-    IKP_Lookat3D=0x23000006,     ///< direction on end effector coordinate system points to desired 3D position
-    IKP_TranslationDirection5D=0x56000007,     ///< end effector origin and direction reaches desired 3D translation and direction. Can be thought of as Ray IK where the origin of the ray must coincide.
-    IKP_TranslationXY2D=0x22000008,     ///< 2D translation along XY plane
-    IKP_TranslationXYOrientation3D=0x33000009,     ///< 2D translation along XY plane and 1D rotation around Z axis. The offset of the rotation is measured starting at +X, so at +X is it 0, at +Y it is pi/2.
-    IKP_TranslationLocalGlobal6D=0x3600000a,     ///< local point on end effector origin reaches desired 3D global point
+     IKP_TranslationXAxisAngle4D=0x4400000b, ///< end effector origin reaches desired 3D translation, manipulator direction makes a specific angle with x-axis  like a cone, angle is from 0-pi. Axes defined in the manipulator base link's coordinate system)
+     IKP_TranslationYAxisAngle4D=0x4400000c, ///< end effector origin reaches desired 3D translation, manipulator direction makes a specific angle with y-axis  like a cone, angle is from 0-pi. Axes defined in the manipulator base link's coordinate system)
+     IKP_TranslationZAxisAngle4D=0x4400000d, ///< end effector origin reaches desired 3D translation, manipulator direction makes a specific angle with z-axis like a cone, angle is from 0-pi. Axes are defined in the manipulator base link's coordinate system.
 
-    IKP_TranslationXAxisAngle4D=0x4400000b, ///< end effector origin reaches desired 3D translation, manipulator direction makes a specific angle with x-axis  like a cone, angle is from 0-pi. Axes defined in the manipulator base link's coordinate system)
-    IKP_TranslationYAxisAngle4D=0x4400000c, ///< end effector origin reaches desired 3D translation, manipulator direction makes a specific angle with y-axis  like a cone, angle is from 0-pi. Axes defined in the manipulator base link's coordinate system)
-    IKP_TranslationZAxisAngle4D=0x4400000d, ///< end effector origin reaches desired 3D translation, manipulator direction makes a specific angle with z-axis like a cone, angle is from 0-pi. Axes are defined in the manipulator base link's coordinate system.
+     IKP_TranslationXAxisAngleZNorm4D=0x4400000e, ///< end effector origin reaches desired 3D translation, manipulator direction needs to be orthogonal to z-axis and be rotated at a certain angle starting from the x-axis (defined in the manipulator base link's coordinate system)
+     IKP_TranslationYAxisAngleXNorm4D=0x4400000f, ///< end effector origin reaches desired 3D translation, manipulator direction needs to be orthogonal to x-axis and be rotated at a certain angle starting from the y-axis (defined in the manipulator base link's coordinate system)
+     IKP_TranslationZAxisAngleYNorm4D=0x44000010, ///< end effector origin reaches desired 3D translation, manipulator direction needs to be orthogonal to y-axis and be rotated at a certain angle starting from the z-axis (defined in the manipulator base link's coordinate system)
 
-    IKP_TranslationXAxisAngleZNorm4D=0x4400000e, ///< end effector origin reaches desired 3D translation, manipulator direction needs to be orthogonal to z-axis and be rotated at a certain angle starting from the x-axis (defined in the manipulator base link's coordinate system)
-    IKP_TranslationYAxisAngleXNorm4D=0x4400000f, ///< end effector origin reaches desired 3D translation, manipulator direction needs to be orthogonal to x-axis and be rotated at a certain angle starting from the y-axis (defined in the manipulator base link's coordinate system)
-    IKP_TranslationZAxisAngleYNorm4D=0x44000010, ///< end effector origin reaches desired 3D translation, manipulator direction needs to be orthogonal to y-axis and be rotated at a certain angle starting from the z-axis (defined in the manipulator base link's coordinate system)
+     IKP_NumberOfParameterizations=16,     ///< number of parameterizations (does not count IKP_None)
 
-    IKP_NumberOfParameterizations=16,     ///< number of parameterizations (does not count IKP_None)
+     IKP_VelocityDataBit = 0x00008000, ///< bit is set if the data represents the time-derivate velocity of an IkParameterization
+     IKP_Transform6DVelocity = IKP_Transform6D|IKP_VelocityDataBit,
+     IKP_Rotation3DVelocity = IKP_Rotation3D|IKP_VelocityDataBit,
+     IKP_Translation3DVelocity = IKP_Translation3D|IKP_VelocityDataBit,
+     IKP_Direction3DVelocity = IKP_Direction3D|IKP_VelocityDataBit,
+     IKP_Ray4DVelocity = IKP_Ray4D|IKP_VelocityDataBit,
+     IKP_Lookat3DVelocity = IKP_Lookat3D|IKP_VelocityDataBit,
+     IKP_TranslationDirection5DVelocity = IKP_TranslationDirection5D|IKP_VelocityDataBit,
+     IKP_TranslationXY2DVelocity = IKP_TranslationXY2D|IKP_VelocityDataBit,
+     IKP_TranslationXYOrientation3DVelocity = IKP_TranslationXYOrientation3D|IKP_VelocityDataBit,
+     IKP_TranslationLocalGlobal6DVelocity = IKP_TranslationLocalGlobal6D|IKP_VelocityDataBit,
+     IKP_TranslationXAxisAngle4DVelocity = IKP_TranslationXAxisAngle4D|IKP_VelocityDataBit,
+     IKP_TranslationYAxisAngle4DVelocity = IKP_TranslationYAxisAngle4D|IKP_VelocityDataBit,
+     IKP_TranslationZAxisAngle4DVelocity = IKP_TranslationZAxisAngle4D|IKP_VelocityDataBit,
+     IKP_TranslationXAxisAngleZNorm4DVelocity = IKP_TranslationXAxisAngleZNorm4D|IKP_VelocityDataBit,
+     IKP_TranslationYAxisAngleXNorm4DVelocity = IKP_TranslationYAxisAngleXNorm4D|IKP_VelocityDataBit,
+     IKP_TranslationZAxisAngleYNorm4DVelocity = IKP_TranslationZAxisAngleYNorm4D|IKP_VelocityDataBit,
 
-    IKP_VelocityDataBit = 0x00008000, ///< bit is set if the data represents the time-derivate velocity of an IkParameterization
-    IKP_Transform6DVelocity = IKP_Transform6D|IKP_VelocityDataBit,
-    IKP_Rotation3DVelocity = IKP_Rotation3D|IKP_VelocityDataBit,
-    IKP_Translation3DVelocity = IKP_Translation3D|IKP_VelocityDataBit,
-    IKP_Direction3DVelocity = IKP_Direction3D|IKP_VelocityDataBit,
-    IKP_Ray4DVelocity = IKP_Ray4D|IKP_VelocityDataBit,
-    IKP_Lookat3DVelocity = IKP_Lookat3D|IKP_VelocityDataBit,
-    IKP_TranslationDirection5DVelocity = IKP_TranslationDirection5D|IKP_VelocityDataBit,
-    IKP_TranslationXY2DVelocity = IKP_TranslationXY2D|IKP_VelocityDataBit,
-    IKP_TranslationXYOrientation3DVelocity = IKP_TranslationXYOrientation3D|IKP_VelocityDataBit,
-    IKP_TranslationLocalGlobal6DVelocity = IKP_TranslationLocalGlobal6D|IKP_VelocityDataBit,
-    IKP_TranslationXAxisAngle4DVelocity = IKP_TranslationXAxisAngle4D|IKP_VelocityDataBit,
-    IKP_TranslationYAxisAngle4DVelocity = IKP_TranslationYAxisAngle4D|IKP_VelocityDataBit,
-    IKP_TranslationZAxisAngle4DVelocity = IKP_TranslationZAxisAngle4D|IKP_VelocityDataBit,
-    IKP_TranslationXAxisAngleZNorm4DVelocity = IKP_TranslationXAxisAngleZNorm4D|IKP_VelocityDataBit,
-    IKP_TranslationYAxisAngleXNorm4DVelocity = IKP_TranslationYAxisAngleXNorm4D|IKP_VelocityDataBit,
-    IKP_TranslationZAxisAngleYNorm4DVelocity = IKP_TranslationZAxisAngleYNorm4D|IKP_VelocityDataBit,
+     IKP_UniqueIdMask = 0x0000ffff, ///< the mask for the unique ids
+     IKP_CustomDataBit = 0x00010000, ///< bit is set if the ikparameterization contains custom data, this is only used when serializing the ik parameterizations
+ };
 
-    IKP_UniqueIdMask = 0x0000ffff, ///< the mask for the unique ids
-    IKP_CustomDataBit = 0x00010000, ///< bit is set if the ikparameterization contains custom data, this is only used when serializing the ik parameterizations
-};
-
-// Code generated by IKFast56/61
-#include "staubli_rx160_manipulator_ikfast_solver.cpp"
+ // Code generated by IKFast56/61
+ #include "staubli_rx160_manipulator_ikfast_solver.cpp"
 
 class IKFastKinematicsPlugin : public kinematics::KinematicsBase
 {
@@ -142,10 +144,10 @@ public:
    */
 
   // Returns the first IK solution that is within joint limits, this is called by get_ik() service
-  bool getPositionIK(const geometry_msgs::Pose &ik_pose,
+  bool getPositionIK(const geometry_msgs::msg::Pose &ik_pose,
                      const std::vector<double> &ik_seed_state,
                      std::vector<double> &solution,
-                     moveit_msgs::MoveItErrorCodes &error_code,
+                     moveit_msgs::msg::MoveItErrorCodes &error_code,
                      const kinematics::KinematicsQueryOptions &options = kinematics::KinematicsQueryOptions()) const;
 
   /**
@@ -156,11 +158,11 @@ public:
    * @param ik_seed_state an initial guess solution for the inverse kinematics
    * @return True if a valid solution was found, false otherwise
    */
-  bool searchPositionIK(const geometry_msgs::Pose &ik_pose,
+  bool searchPositionIK(const geometry_msgs::msg::Pose &ik_pose,
                         const std::vector<double> &ik_seed_state,
                         double timeout,
                         std::vector<double> &solution,
-                        moveit_msgs::MoveItErrorCodes &error_code,
+                        moveit_msgs::msg::MoveItErrorCodes &error_code,
                         const kinematics::KinematicsQueryOptions &options = kinematics::KinematicsQueryOptions()) const;
 
   /**
@@ -172,12 +174,12 @@ public:
    * @param the distance that the redundancy can be from the current position
    * @return True if a valid solution was found, false otherwise
    */
-  bool searchPositionIK(const geometry_msgs::Pose &ik_pose,
+  bool searchPositionIK(const geometry_msgs::msg::Pose &ik_pose,
                         const std::vector<double> &ik_seed_state,
                         double timeout,
                         const std::vector<double> &consistency_limits,
                         std::vector<double> &solution,
-                        moveit_msgs::MoveItErrorCodes &error_code,
+                        moveit_msgs::msg::MoveItErrorCodes &error_code,
                         const kinematics::KinematicsQueryOptions &options = kinematics::KinematicsQueryOptions()) const;
 
   /**
@@ -188,12 +190,12 @@ public:
    * @param ik_seed_state an initial guess solution for the inverse kinematics
    * @return True if a valid solution was found, false otherwise
    */
-  bool searchPositionIK(const geometry_msgs::Pose &ik_pose,
+  bool searchPositionIK(const geometry_msgs::msg::Pose &ik_pose,
                         const std::vector<double> &ik_seed_state,
                         double timeout,
                         std::vector<double> &solution,
                         const IKCallbackFn &solution_callback,
-                        moveit_msgs::MoveItErrorCodes &error_code,
+                        moveit_msgs::msg::MoveItErrorCodes &error_code,
                         const kinematics::KinematicsQueryOptions &options = kinematics::KinematicsQueryOptions()) const;
 
   /**
@@ -206,13 +208,13 @@ public:
    * @param consistency_limit the distance that the redundancy can be from the current position
    * @return True if a valid solution was found, false otherwise
    */
-  bool searchPositionIK(const geometry_msgs::Pose &ik_pose,
+    bool searchPositionIK(const geometry_msgs::msg::Pose &ik_pose,
                         const std::vector<double> &ik_seed_state,
                         double timeout,
                         const std::vector<double> &consistency_limits,
                         std::vector<double> &solution,
                         const IKCallbackFn &solution_callback,
-                        moveit_msgs::MoveItErrorCodes &error_code,
+                         moveit_msgs::msg::MoveItErrorCodes &error_code,
                         const kinematics::KinematicsQueryOptions &options = kinematics::KinematicsQueryOptions()) const;
 
   /**
@@ -228,7 +230,7 @@ public:
    */
   bool getPositionFK(const std::vector<std::string> &link_names,
                      const std::vector<double> &joint_angles,
-                     std::vector<geometry_msgs::Pose> &poses) const;
+                     std::vector<geometry_msgs::msg::Pose> &poses) const;
 
 private:
 
@@ -263,12 +265,14 @@ bool IKFastKinematicsPlugin::initialize(const std::string &robot_description,
                                         const std::string& tip_name,
                                         double search_discretization)
 {
-  setValues(robot_description, group_name, base_name, tip_name, search_discretization);
+    std::vector<std::string> tip_frames;
+    tip_frames.push_back(tip_name);
+  setValues(robot_description, group_name, base_name, tip_frames, search_discretization);
 
-  ros::NodeHandle node_handle("~/"+group_name);
+  auto node_handle = rclcpp::Node::make_shared("~/"+group_name);
 
   std::string robot;
-  node_handle.param("robot",robot,std::string());
+  node_handle->param("robot",robot,std::string());
 
   // IKFast56/61
   fillFreeParams( GetNumFreeParameters(), GetFreeParameters() );
@@ -276,7 +280,7 @@ bool IKFastKinematicsPlugin::initialize(const std::string &robot_description,
 
   if(free_params_.size() > 1)
   {
-    ROS_FATAL("Only one free joint paramter supported!");
+      //RCLCPP_FATAL("Only one free joint paramter supported!");
     return false;
   }
 
@@ -287,29 +291,29 @@ bool IKFastKinematicsPlugin::initialize(const std::string &robot_description,
   node_handle.param("urdf_xml",urdf_xml,robot_description);
   node_handle.searchParam(urdf_xml,full_urdf_xml);
 
-  ROS_DEBUG_NAMED("ikfast","Reading xml file from parameter server");
+  //RCLCPP_DEBUG("ikfast","Reading xml file from parameter server");
   if (!node_handle.getParam(full_urdf_xml, xml_string))
   {
-    ROS_FATAL_NAMED("ikfast","Could not load the xml from parameter server: %s", urdf_xml.c_str());
+          //RCLCPP_FATAL("Could not load the xml from parameter server: %s", urdf_xml.c_str());
     return false;
   }
 
   node_handle.param(full_urdf_xml,xml_string,std::string());
   robot_model.initString(xml_string);
 
-  ROS_DEBUG_STREAM_NAMED("ikfast","Reading joints and links from URDF");
+        //RCLCPP_DEBUG_STREAM("Reading joints and links from URDF");
 
   urdf::LinkConstSharedPtr link = robot_model.getLink(tip_frame_);
   while(link->name != base_frame_ && joint_names_.size() <= num_joints_)
   {
-    ROS_DEBUG_NAMED("ikfast","Link %s",link->name.c_str());
+    //RCLCPP_DEBUG("Link %s",link->name.c_str());
     link_names_.push_back(link->name);
     urdf::JointSharedPtr joint = link->parent_joint;
     if(joint)
     {
       if (joint->type != urdf::Joint::UNKNOWN && joint->type != urdf::Joint::FIXED)
       {
-        ROS_DEBUG_STREAM_NAMED("ikfast","Adding joint " << joint->name );
+              //RCLCPP_DEBUG_STREAM("Adding joint " << joint->name );
 
         joint_names_.push_back(joint->name);
         float lower, upper;
@@ -347,14 +351,14 @@ bool IKFastKinematicsPlugin::initialize(const std::string &robot_description,
       }
     } else
     {
-      ROS_WARN_NAMED("ikfast","no joint corresponding to %s",link->name.c_str());
+        //RCLCPP_WARN("no joint corresponding to %s",link->name.c_str());
     }
     link = link->getParent();
   }
 
   if(joint_names_.size() != num_joints_)
   {
-    ROS_FATAL_STREAM_NAMED("ikfast","Joint numbers mismatch: URDF has " << joint_names_.size() << " and IKFast has " << num_joints_);
+      //RCLCPP_FATAL_STREAM("Joint numbers mismatch: URDF has " << joint_names_.size() << " and IKFast has " << num_joints_);
     return false;
   }
 
@@ -365,7 +369,7 @@ bool IKFastKinematicsPlugin::initialize(const std::string &robot_description,
   std::reverse(joint_has_limits_vector_.begin(), joint_has_limits_vector_.end());
 
   for(size_t i=0; i <num_joints_; ++i)
-    ROS_INFO_STREAM_NAMED("ikfast",joint_names_[i] << " " << joint_min_vector_[i] << " " << joint_max_vector_[i] << " " << joint_has_limits_vector_[i]);
+      //RCLCPP_INFO_STREAM(joint_names_[i] << " " << joint_min_vector_[i] << " " << joint_max_vector_[i] << " " << joint_has_limits_vector_[i]);
 
   active_ = true;
   return true;
@@ -419,12 +423,12 @@ int IKFastKinematicsPlugin::solve(KDL::Frame &pose_frame, const std::vector<doub
     case IKP_TranslationYAxisAngle4D:
     case IKP_TranslationZAxisAngle4D:
       // For **TranslationXAxisAngle4D**, **TranslationYAxisAngle4D**, and **TranslationZAxisAngle4D**, the first value represents the angle.
-      ROS_ERROR_NAMED("ikfast", "IK for this IkParameterizationType not implemented yet.");
+      //RCLCPP_ERROR( "IK for this IkParameterizationType not implemented yet.");
       return 0;
 
     case IKP_TranslationLocalGlobal6D:
       // For **TranslationLocalGlobal6D**, the diagonal elements ([0],[4],[8]) are the local translation inside the end effector coordinate system.
-      ROS_ERROR_NAMED("ikfast", "IK for this IkParameterizationType not implemented yet.");
+      //RCLCPP_ERROR( "IK for this IkParameterizationType not implemented yet.");
       return 0;
 
     case IKP_Rotation3D:
@@ -435,11 +439,11 @@ int IKFastKinematicsPlugin::solve(KDL::Frame &pose_frame, const std::vector<doub
     case IKP_TranslationXAxisAngleZNorm4D:
     case IKP_TranslationYAxisAngleXNorm4D:
     case IKP_TranslationZAxisAngleYNorm4D:
-      ROS_ERROR_NAMED("ikfast", "IK for this IkParameterizationType not implemented yet.");
+      //RCLCPP_ERROR( "IK for this IkParameterizationType not implemented yet.");
       return 0;
 
     default:
-      ROS_ERROR_NAMED("ikfast", "Unknown IkParameterizationType! Was the solver generated with an incompatible version of Openrave?");
+      //RCLCPP_ERROR( "Unknown IkParameterizationType! Was the solver generated with an incompatible version of Openrave?");
       return 0;
   }
 }
@@ -459,7 +463,7 @@ void IKFastKinematicsPlugin::getSolution(const IkSolutionList<IkReal> &solutions
   //   std::cout << " " << solution[j];
   // std::cout << std::endl;
 
-  //ROS_ERROR("%f %d",solution[2],vsolfree.size());
+  ////RCLCPP_ERROR("%f %d",solution[2],vsolfree.size());
 }
 
 double IKFastKinematicsPlugin::harmonize(const std::vector<double> &ik_seed_state, std::vector<double> &solution) const
@@ -519,7 +523,7 @@ void IKFastKinematicsPlugin::getClosestSolution(const IkSolutionList<IkReal> &so
   {
     getSolution(solutions, i,sol);
     double dist = harmonize(ik_seed_state, sol);
-    ROS_INFO_STREAM_NAMED("ikfast","Dist " << i << " dist " << dist);
+          //RCLCPP_INFO_STREAM("Dist " << i << " dist " << dist);
     //std::cout << "dist[" << i << "]= " << dist << std::endl;
     if(minindex == -1 || dist<mindist){
       minindex = i;
@@ -576,21 +580,21 @@ bool IKFastKinematicsPlugin::getCount(int &count, const int &max_count, const in
 
 bool IKFastKinematicsPlugin::getPositionFK(const std::vector<std::string> &link_names,
                                            const std::vector<double> &joint_angles,
-                                           std::vector<geometry_msgs::Pose> &poses) const
+                                           std::vector<geometry_msgs::msg::Pose> &poses) const
 {
 #ifndef IKTYPE_TRANSFORM_6D
-  ROS_ERROR_NAMED("ikfast", "Can only compute FK for IKTYPE_TRANSFORM_6D!");
+  //RCLCPP_ERROR"ikfast", "Can only compute FK for IKTYPE_TRANSFORM_6D!");
   return false;
 #endif
 
   KDL::Frame p_out;
   if(link_names.size() == 0) {
-    ROS_WARN_STREAM_NAMED("ikfast","Link names with nothing");
+      //RCLCPP_WARN_STREAM("Link names with nothing");
     return false;
   }
 
   if(link_names.size()!=1 || link_names[0]!=tip_frame_){
-    ROS_ERROR_NAMED("ikfast","Can compute FK for %s only",tip_frame_.c_str());
+    //RCLCPP_ERROR("Can compute FK for %s only",tip_frame_.c_str());
     return false;
   }
 
@@ -616,7 +620,7 @@ bool IKFastKinematicsPlugin::getPositionFK(const std::vector<std::string> &link_
   return valid;
 }
 
-bool IKFastKinematicsPlugin::searchPositionIK(const geometry_msgs::Pose &ik_pose,
+bool IKFastKinematicsPlugin::searchPositionIK(const geometry_msgs::msg::Pose &ik_pose,
                                            const std::vector<double> &ik_seed_state,
                                            double timeout,
                                            std::vector<double> &solution,
@@ -636,12 +640,12 @@ bool IKFastKinematicsPlugin::searchPositionIK(const geometry_msgs::Pose &ik_pose
                           options);
 }
     
-bool IKFastKinematicsPlugin::searchPositionIK(const geometry_msgs::Pose &ik_pose,
+bool IKFastKinematicsPlugin::searchPositionIK(const geometry_msgs::msg::Pose &ik_pose,
                                            const std::vector<double> &ik_seed_state,
                                            double timeout,
                                            const std::vector<double> &consistency_limits,
                                            std::vector<double> &solution,
-                                           moveit_msgs::MoveItErrorCodes &error_code,
+                                            moveit_msgs::msg::MoveItErrorCodes &error_code,
                                            const kinematics::KinematicsQueryOptions &options) const
 {
   const IKCallbackFn solution_callback = 0; 
@@ -655,12 +659,12 @@ bool IKFastKinematicsPlugin::searchPositionIK(const geometry_msgs::Pose &ik_pose
                           options);
 }
 
-bool IKFastKinematicsPlugin::searchPositionIK(const geometry_msgs::Pose &ik_pose,
+bool IKFastKinematicsPlugin::searchPositionIK(const geometry_msgs::msg::Pose &ik_pose,
                                            const std::vector<double> &ik_seed_state,
                                            double timeout,
                                            std::vector<double> &solution,
                                            const IKCallbackFn &solution_callback,
-                                           moveit_msgs::MoveItErrorCodes &error_code,
+                                           moveit_msgs::msg::MoveItErrorCodes &error_code,
                                            const kinematics::KinematicsQueryOptions &options) const
 {
   std::vector<double> consistency_limits;
@@ -674,27 +678,27 @@ bool IKFastKinematicsPlugin::searchPositionIK(const geometry_msgs::Pose &ik_pose
                           options);
 }
 
-bool IKFastKinematicsPlugin::searchPositionIK(const geometry_msgs::Pose &ik_pose,
+bool IKFastKinematicsPlugin::searchPositionIK(const geometry_msgs::msg::Pose &ik_pose,
                                               const std::vector<double> &ik_seed_state,
                                               double timeout,
                                               const std::vector<double> &consistency_limits,
                                               std::vector<double> &solution,
                                               const IKCallbackFn &solution_callback,
-                                              moveit_msgs::MoveItErrorCodes &error_code,
+                                              moveit_msgs::msg::MoveItErrorCodes &error_code,
                                               const kinematics::KinematicsQueryOptions &options) const
 {
-  ROS_DEBUG_STREAM_NAMED("ikfast","searchPositionIK");
+        //RCLCPP_DEBUG_STREAM("searchPositionIK");
 
   // Check if there are no redundant joints
   if(free_params_.size()==0)
   {
-    ROS_DEBUG_STREAM_NAMED("ikfast","No need to search since no free params/redundant joints");
+          //RCLCPP_DEBUG_STREAM("No need to search since no free params/redundant joints");
 
     // Find first IK solution, within joint limits
     if(!getPositionIK(ik_pose, ik_seed_state, solution, error_code))
     {
-      ROS_DEBUG_STREAM_NAMED("ikfast","No solution whatsoever");
-      error_code.val = moveit_msgs::MoveItErrorCodes::NO_IK_SOLUTION;
+            //RCLCPP_DEBUG_STREAM("No solution whatsoever");
+      error_code.val = moveit_msgs::msg::MoveItErrorCodes::NO_IK_SOLUTION;
       return false;
     }
 
@@ -702,14 +706,14 @@ bool IKFastKinematicsPlugin::searchPositionIK(const geometry_msgs::Pose &ik_pose
     if( !solution_callback.empty() )
     {
       solution_callback(ik_pose, solution, error_code);
-      if(error_code.val == moveit_msgs::MoveItErrorCodes::SUCCESS)
+      if(error_code.val == moveit_msgs::msg::MoveItErrorCodes::SUCCESS)
       {
-        ROS_DEBUG_STREAM_NAMED("ikfast","Solution passes callback");
+              //RCLCPP_DEBUG_STREAM("Solution passes callback");
         return true;
       }
       else
       {
-        ROS_DEBUG_STREAM_NAMED("ikfast","Solution has error code " << error_code);
+              //RCLCPP_DEBUG_STREAM("Solution has error code " << error_code);
         return false;
       }
     }
@@ -723,21 +727,21 @@ bool IKFastKinematicsPlugin::searchPositionIK(const geometry_msgs::Pose &ik_pose
   // Error Checking
   if(!active_)
   {
-    ROS_ERROR_STREAM_NAMED("ikfast","Kinematics not active");
+      //RCLCPP_ERROR_STREAM("Kinematics not active");
     error_code.val = error_code.NO_IK_SOLUTION;
     return false;
   }
 
   if(ik_seed_state.size() != num_joints_)
   {
-    ROS_ERROR_STREAM_NAMED("ikfast","Seed state must have size " << num_joints_ << " instead of size " << ik_seed_state.size());
+          //RCLCPP_ERROR_STREAM("Seed state must have size " << num_joints_ << " instead of size " << ik_seed_state.size());
     error_code.val = error_code.NO_IK_SOLUTION;
     return false;
   }
 
   if(!consistency_limits.empty() && consistency_limits.size() != num_joints_)
   {
-    ROS_ERROR_STREAM_NAMED("ikfast","Consistency limits be empty or must have size " << num_joints_ << " instead of size " << consistency_limits.size());
+          //RCLCPP_ERROR_STREAM("Consistency limits be empty or must have size " << num_joints_ << " instead of size " << consistency_limits.size());
     error_code.val = error_code.NO_IK_SOLUTION;
     return false;
   }
@@ -751,7 +755,7 @@ bool IKFastKinematicsPlugin::searchPositionIK(const geometry_msgs::Pose &ik_pose
 
   std::vector<double> vfree(free_params_.size());
 
-  ros::Time maxTime = ros::Time::now() + ros::Duration(timeout);
+  auto maxTime = rclcpp::Time::now() + rclcpp::Duration(timeout);
   int counter = 0;
 
   double initial_guess = ik_seed_state[free_params_[0]];
@@ -781,16 +785,16 @@ bool IKFastKinematicsPlugin::searchPositionIK(const geometry_msgs::Pose &ik_pose
   // -------------------------------------------------------------------------------------------------
   // Begin searching
 
-  ROS_DEBUG_STREAM_NAMED("ikfast","Free param is " << free_params_[0] << " initial guess is " << initial_guess << ", # positive increments: " << num_positive_increments << ", # negative increments: " << num_negative_increments);
+        //RCLCPP_DEBUG_STREAM("Free param is " << free_params_[0] << " initial guess is " << initial_guess << ", # positive increments: " << num_positive_increments << ", # negative increments: " << num_negative_increments);
 
   while(true)
   {
     IkSolutionList<IkReal> solutions;
     int numsol = solve(frame,vfree, solutions);
 
-    ROS_DEBUG_STREAM_NAMED("ikfast","Found " << numsol << " solutions from IKFast");
+          //RCLCPP_DEBUG_STREAM("Found " << numsol << " solutions from IKFast");
 
-    //ROS_INFO("%f",vfree[0]);
+    //RCLCPP_INFO("%f",vfree[0]);
 
     if( numsol > 0 )
     {
@@ -807,7 +811,7 @@ bool IKFastKinematicsPlugin::searchPositionIK(const geometry_msgs::Pose &ik_pose
             obeys_limits = false;
             break;
           }
-          //ROS_INFO_STREAM_NAMED("ikfast","Num " << i << " value " << sol[i] << " has limits " << joint_has_limits_vector_[i] << " " << joint_min_vector_[i] << " " << joint_max_vector_[i]);
+          //      //RCLCPP_INFO_STREAM("Num " << i << " value " << sol[i] << " has limits " << joint_has_limits_vector_[i] << " " << joint_min_vector_[i] << " " << joint_max_vector_[i]);
         }
         if(obeys_limits)
         {
@@ -833,31 +837,31 @@ bool IKFastKinematicsPlugin::searchPositionIK(const geometry_msgs::Pose &ik_pose
 
     if(!getCount(counter, num_positive_increments, num_negative_increments))
     {
-      error_code.val = moveit_msgs::MoveItErrorCodes::NO_IK_SOLUTION;
+      error_code.val = moveit_msgs::msg::MoveItErrorCodes::NO_IK_SOLUTION;
       return false;
     }
 
     vfree[0] = initial_guess+search_discretization_*counter;
-    ROS_DEBUG_STREAM_NAMED("ikfast","Attempt " << counter << " with 0th free joint having value " << vfree[0]);
+          //RCLCPP_DEBUG_STREAM("Attempt " << counter << " with 0th free joint having value " << vfree[0]);
   }
 
   // not really needed b/c shouldn't ever get here
-  error_code.val = moveit_msgs::MoveItErrorCodes::NO_IK_SOLUTION;
+  error_code.val = moveit_msgs::msg::MoveItErrorCodes::NO_IK_SOLUTION;
   return false;
 }
 
 // Used when there are no redundant joints - aka no free params
-bool IKFastKinematicsPlugin::getPositionIK(const geometry_msgs::Pose &ik_pose,
+bool IKFastKinematicsPlugin::getPositionIK(const geometry_msgs::msg::Pose &ik_pose,
                                            const std::vector<double> &ik_seed_state,
                                            std::vector<double> &solution,
-                                           moveit_msgs::MoveItErrorCodes &error_code,
+                                           moveit_msgs::msg::MoveItErrorCodes &error_code,
                                            const kinematics::KinematicsQueryOptions &options) const
 {
-  ROS_DEBUG_STREAM_NAMED("ikfast","getPositionIK");
+        //RCLCPP_DEBUG_STREAM("getPositionIK");
 
   if(!active_)
   {
-    ROS_ERROR("kinematics not active");    
+    //RCLCPP_ERROR("kinematics not active");    
     return false;
   }
 
@@ -865,7 +869,7 @@ bool IKFastKinematicsPlugin::getPositionIK(const geometry_msgs::Pose &ik_pose,
   for(std::size_t i = 0; i < free_params_.size(); ++i)
   {
     int p = free_params_[i];
-    ROS_ERROR("%u is %f",p,ik_seed_state[p]);  // DTC
+    //RCLCPP_ERROR("%u is %f",p,ik_seed_state[p]);  // DTC
     vfree[i] = ik_seed_state[p];
   }
 
@@ -875,7 +879,7 @@ bool IKFastKinematicsPlugin::getPositionIK(const geometry_msgs::Pose &ik_pose,
   IkSolutionList<IkReal> solutions;
   int numsol = solve(frame,vfree,solutions);
 
-  ROS_DEBUG_STREAM_NAMED("ikfast","Found " << numsol << " solutions from IKFast");
+        //RCLCPP_DEBUG_STREAM("Found " << numsol << " solutions from IKFast");
 
   if(numsol)
   {
@@ -883,7 +887,8 @@ bool IKFastKinematicsPlugin::getPositionIK(const geometry_msgs::Pose &ik_pose,
     {
       std::vector<double> sol;
       getSolution(solutions,s,sol);
-      ROS_DEBUG_NAMED("ikfast","Sol %d: %e   %e   %e   %e   %e   %e", s, sol[0], sol[1], sol[2], sol[3], sol[4], sol[5]);
+      //auto sol_string = sprintf("Sol %d: %e   %e   %e   %e   %e   %e", s, sol[0], sol[1], sol[2], sol[3], sol[4], sol[5]); 
+      //RCLCPP_DEBUG(sol_string);
 
       bool obeys_limits = true;
       for(unsigned int i = 0; i < sol.size(); i++)
@@ -894,7 +899,7 @@ bool IKFastKinematicsPlugin::getPositionIK(const geometry_msgs::Pose &ik_pose,
         {
           // One element of solution is not within limits
           obeys_limits = false;
-          ROS_DEBUG_STREAM_NAMED("ikfast","Not in limits! " << i << " value " << sol[i] << " has limit: " << joint_has_limits_vector_[i] << "  being  " << joint_min_vector_[i] << " to " << joint_max_vector_[i]);
+                //RCLCPP_DEBUG_STREAM("Not in limits! " << i << " value " << sol[i] << " has limit: " << joint_has_limits_vector_[i] << "  being  " << joint_min_vector_[i] << " to " << joint_max_vector_[i]);
           break;
         }
       }
@@ -902,24 +907,23 @@ bool IKFastKinematicsPlugin::getPositionIK(const geometry_msgs::Pose &ik_pose,
       {
         // All elements of solution obey limits
         getSolution(solutions,s,solution);
-        error_code.val = moveit_msgs::MoveItErrorCodes::SUCCESS;
+        error_code.val = moveit_msgs::msg::MoveItErrorCodes::SUCCESS;
         return true;
       }
     }
   }
   else
   {
-    ROS_DEBUG_STREAM_NAMED("ikfast","No IK solution");
+      //RCLCPP_DEBUG_STREAM("No IK solution");
   }
 
-  error_code.val = moveit_msgs::MoveItErrorCodes::NO_IK_SOLUTION;
+  error_code.val = moveit_msgs::msg::MoveItErrorCodes::NO_IK_SOLUTION;
   return false;
 }
-
 
 
 } // end namespace
 
 //register IKFastKinematicsPlugin as a KinematicsBase implementation
-#include <pluginlib/class_list_macros.h>
-PLUGINLIB_EXPORT_CLASS(ikfast_kinematics_plugin::IKFastKinematicsPlugin, kinematics::KinematicsBase);
+// #include <pluginlib/class_list_macros.h>
+// PLUGINLIB_EXPORT_CLASS(ikfast_kinematics_plugin::IKFastKinematicsPlugin, kinematics::KinematicsBase);
