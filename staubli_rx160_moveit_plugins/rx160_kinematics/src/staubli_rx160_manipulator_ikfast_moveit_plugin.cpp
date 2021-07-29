@@ -616,7 +616,8 @@ bool IKFastKinematicsPlugin::getPositionFK(const std::vector<std::string> &link_
     p_out.M.data[i] = eerot[i];
 
   poses.resize(1);
-  p_out = tf2::toMsg(poses[0]);
+  geometry_msgs::msg::Pose pose = poses[0];
+  tf2::fromMsg(pose,p_out);
 
   return valid;
 }
