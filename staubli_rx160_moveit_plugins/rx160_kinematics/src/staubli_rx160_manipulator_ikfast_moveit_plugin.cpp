@@ -123,6 +123,7 @@ class IKFastKinematicsPlugin : public kinematics::KinematicsBase
   size_t num_joints_;
   std::vector<int> free_params_;
   bool active_; // Internal variable that indicates whether solvers are configured and ready
+  rclcpp::Node::SharedPtr node_handle_;
 
   const std::vector<std::string>& getJointNames() const { return joint_names_; }
   const std::vector<std::string>& getLinkNames() const { return link_names_; }
@@ -269,10 +270,10 @@ bool IKFastKinematicsPlugin::initialize(const std::string &robot_description,
     tip_frames.push_back(tip_name);
   setValues(robot_description, group_name, base_name, tip_frames, search_discretization);
 
-  auto node_handle = rclcpp::Node::make_shared("~/"+group_name);
+  node_handle_ = rclcpp::Node::make_shared("~/"+group_name);
 
   std::string robot;
-  node_handle->param("robot",robot,std::string());
+  node_handle_->get_parameter_or("robot",robot,std::string());
 
   // IKFast56/61
   fillFreeParams( GetNumFreeParameters(), GetFreeParameters() );
@@ -288,17 +289,17 @@ bool IKFastKinematicsPlugin::initialize(const std::string &robot_description,
   std::string xml_string;
 
   std::string urdf_xml,full_urdf_xml;
-  node_handle.param("urdf_xml",urdf_xml,robot_description);
-  node_handle.searchParam(urdf_xml,full_urdf_xml);
+  node_handle_->get_parameter_or("urdf_xml",urdf_xml,robot_description);
+  node_handle_->get_parameter(urdf_xml,full_urdf_xml);
 
   //RCLCPP_DEBUG("ikfast","Reading xml file from parameter server");
-  if (!node_handle.getParam(full_urdf_xml, xml_string))
+  if (!node_handle_->get_parameter(full_urdf_xml, xml_string))
   {
-          //RCLCPP_FATAL("Could not load the xml from parameter server: %s", urdf_xml.c_str());
+      //RCLCPP_FATAL("Could not load the xml from parameter server: %s", urdf_xml.c_str());
     return false;
   }
 
-  node_handle.param(full_urdf_xml,xml_string,std::string());
+  node_handle_->get_parameter_or(full_urdf_xml,xml_string,std::string());
   robot_model.initString(xml_string);
 
         //RCLCPP_DEBUG_STREAM("Reading joints and links from URDF");
@@ -755,7 +756,7 @@ bool IKFastKinematicsPlugin::searchPositionIK(const geometry_msgs::msg::Pose &ik
 
   std::vector<double> vfree(free_params_.size());
 
-  auto maxTime = rclcpp::Time::now() + rclcpp::Duration(timeout);
+  auto maxTime = node_handle_->now() + rclcpp::Duration(timeout);
   int counter = 0;
 
   double initial_guess = ik_seed_state[free_params_[0]];
