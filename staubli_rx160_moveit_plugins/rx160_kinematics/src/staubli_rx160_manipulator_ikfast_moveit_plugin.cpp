@@ -52,6 +52,7 @@
 #include "tf2_kdl/tf2_kdl.h"
 #include "geometry_msgs/msg/pose.hpp"
 
+#include <cfloat>
 #include <complex>
 // Need a floating point tolerance when checking joint limits, in case the joint starts at limit
 const double LIMIT_TOLERANCE = .0000001;
@@ -268,7 +269,7 @@ bool IKFastKinematicsPlugin::initialize(const std::string &robot_description,
 {
     std::vector<std::string> tip_frames;
     tip_frames.push_back(tip_name);
-  setValues(robot_description, group_name, base_name, tip_frames, search_discretization);
+    setValues(robot_description, group_name, base_name, tip_frames, search_discretization);
 
   node_handle_ = rclcpp::Node::make_shared("~/"+group_name);
 
@@ -304,7 +305,7 @@ bool IKFastKinematicsPlugin::initialize(const std::string &robot_description,
 
         //RCLCPP_DEBUG_STREAM("Reading joints and links from URDF");
 
-  urdf::LinkConstSharedPtr link = robot_model.getLink(tip_frame_);
+  urdf::LinkConstSharedPtr link = robot_model.getLink(tip_frames_);
   while(link->name != base_frame_ && joint_names_.size() <= num_joints_)
   {
     //RCLCPP_DEBUG("Link %s",link->name.c_str());
@@ -594,8 +595,8 @@ bool IKFastKinematicsPlugin::getPositionFK(const std::vector<std::string> &link_
     return false;
   }
 
-  if(link_names.size()!=1 || link_names[0]!=tip_frame_){
-    //RCLCPP_ERROR("Can compute FK for %s only",tip_frame_.c_str());
+  if(link_names.size()!=1 || link_names[0]!=tip_frames_){
+    //RCLCPP_ERROR("Can compute FK for %s only",tip_frames_.c_str());
     return false;
   }
 
@@ -775,13 +776,13 @@ bool IKFastKinematicsPlugin::searchPositionIK(const geometry_msgs::msg::Pose &ik
     double max_limit = fmin(joint_max_vector_[free_params_[0]], initial_guess+consistency_limits[free_params_[0]]);
     double min_limit = fmax(joint_min_vector_[free_params_[0]], initial_guess-consistency_limits[free_params_[0]]);
 
-    num_positive_increments = (int)((max_limit-initial_guess)/search_discretization_);
-    num_negative_increments = (int)((initial_guess-min_limit)/search_discretization_);
+    num_positive_increments = (int)((max_limit-initial_guess)/redundant_joint_discretization_);
+    num_negative_increments = (int)((initial_guess-min_limit)/redundant_joint_discretization_);
   }
   else // no consitency limits provided
   {
-    num_positive_increments = (joint_max_vector_[free_params_[0]]-initial_guess)/search_discretization_;
-    num_negative_increments = (initial_guess-joint_min_vector_[free_params_[0]])/search_discretization_;
+    num_positive_increments = (joint_max_vector_[free_params_[0]]-initial_guess)/redundant_joint_discretization_;
+    num_negative_increments = (initial_guess-joint_min_vector_[free_params_[0]])/redundant_joint_discretization_;
   }
 
   // -------------------------------------------------------------------------------------------------
@@ -843,7 +844,7 @@ bool IKFastKinematicsPlugin::searchPositionIK(const geometry_msgs::msg::Pose &ik
       return false;
     }
 
-    vfree[0] = initial_guess+search_discretization_*counter;
+    vfree[0] = initial_guess+redundant_joint_discretization_*counter;
           //RCLCPP_DEBUG_STREAM("Attempt " << counter << " with 0th free joint having value " << vfree[0]);
   }
 
@@ -927,5 +928,5 @@ bool IKFastKinematicsPlugin::getPositionIK(const geometry_msgs::msg::Pose &ik_po
 } // end namespace
 
 //register IKFastKinematicsPlugin as a KinematicsBase implementation
-// #include <pluginlib/class_list_macros.h>
-// PLUGINLIB_EXPORT_CLASS(ikfast_kinematics_plugin::IKFastKinematicsPlugin, kinematics::KinematicsBase);
+ #include <pluginlib/class_list_macros.hpp>
+ PLUGINLIB_EXPORT_CLASS(ikfast_kinematics_plugin::IKFastKinematicsPlugin, kinematics::KinematicsBase);
