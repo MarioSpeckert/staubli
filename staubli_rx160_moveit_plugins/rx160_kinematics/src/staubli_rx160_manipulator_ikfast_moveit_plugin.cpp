@@ -625,7 +625,7 @@ bool IKFastKinematicsPlugin::searchPositionIK(const geometry_msgs::msg::Pose &ik
                                            const std::vector<double> &ik_seed_state,
                                            double timeout,
                                            std::vector<double> &solution,
-                                           moveit_msgs::MoveItErrorCodes &error_code,
+                                           moveit_msgs::msg::MoveItErrorCodes &error_code,
                                            const kinematics::KinematicsQueryOptions &options) const
 {
   const IKCallbackFn solution_callback = 0; 
