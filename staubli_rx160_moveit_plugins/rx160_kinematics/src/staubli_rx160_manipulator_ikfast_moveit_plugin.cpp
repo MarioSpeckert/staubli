@@ -305,7 +305,7 @@ bool IKFastKinematicsPlugin::initialize(const std::string &robot_description,
 
         //RCLCPP_DEBUG_STREAM("Reading joints and links from URDF");
 
-  urdf::LinkConstSharedPtr link = robot_model.getLink(tip_frames_);
+  urdf::LinkConstSharedPtr link = robot_model.getLink(tip_frames_[0]);
   while(link->name != base_frame_ && joint_names_.size() <= num_joints_)
   {
     //RCLCPP_DEBUG("Link %s",link->name.c_str());
@@ -595,8 +595,8 @@ bool IKFastKinematicsPlugin::getPositionFK(const std::vector<std::string> &link_
     return false;
   }
 
-  if(link_names.size()!=1 || link_names[0]!=tip_frames_){
-    //RCLCPP_ERROR("Can compute FK for %s only",tip_frames_.c_str());
+  if(link_names.size()!=1 || link_names[0]!=tip_frames_[0]){
+    //RCLCPP_ERROR("Can compute FK for %s only",tip_frames_[0].c_str());
     return false;
   }
 
@@ -776,13 +776,13 @@ bool IKFastKinematicsPlugin::searchPositionIK(const geometry_msgs::msg::Pose &ik
     double max_limit = fmin(joint_max_vector_[free_params_[0]], initial_guess+consistency_limits[free_params_[0]]);
     double min_limit = fmax(joint_min_vector_[free_params_[0]], initial_guess-consistency_limits[free_params_[0]]);
 
-    num_positive_increments = (int)((max_limit-initial_guess)/redundant_joint_discretization_);
-    num_negative_increments = (int)((initial_guess-min_limit)/redundant_joint_discretization_);
+    num_positive_increments = (int)((max_limit-initial_guess)/redundant_joint_discretization_.at(0));
+    num_negative_increments = (int)((initial_guess-min_limit)/redundant_joint_discretization_.at(0));
   }
   else // no consitency limits provided
   {
-    num_positive_increments = (joint_max_vector_[free_params_[0]]-initial_guess)/redundant_joint_discretization_;
-    num_negative_increments = (initial_guess-joint_min_vector_[free_params_[0]])/redundant_joint_discretization_;
+    num_positive_increments = (joint_max_vector_[free_params_[0]]-initial_guess)/redundant_joint_discretization_.at(0);
+    num_negative_increments = (initial_guess-joint_min_vector_[free_params_[0]])/redundant_joint_discretization_.at(0);
   }
 
   // -------------------------------------------------------------------------------------------------
@@ -844,7 +844,7 @@ bool IKFastKinematicsPlugin::searchPositionIK(const geometry_msgs::msg::Pose &ik
       return false;
     }
 
-    vfree[0] = initial_guess+redundant_joint_discretization_*counter;
+    vfree[0] = initial_guess+redundant_joint_discretization_.at(0)*counter;
           //RCLCPP_DEBUG_STREAM("Attempt " << counter << " with 0th free joint having value " << vfree[0]);
   }
 
